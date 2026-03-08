@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Word, LearningProgress, StudyRecord, UserPreferences } from '../types';
+import { Word, LearningProgress, StudyRecord, UserPreferences, MistakeWord } from '../types';
 
 const KEYS = {
   LEARNED_WORDS: '@smartvocab_learned_words',
@@ -7,6 +7,8 @@ const KEYS = {
   STUDY_RECORDS: '@smartvocab_study_records',
   USER_PREFERENCES: '@smartvocab_user_preferences',
   BOOKMARKS: '@smartvocab_bookmarks',
+  MISTAKE_WORDS: '@smartvocab_mistake_words',
+  LAST_MISTAKE_CHECK_DATE: '@smartvocab_last_mistake_check_date',
 };
 
 // Learned Words
@@ -25,6 +27,7 @@ export const saveLearnedWord = async (word: Word): Promise<boolean> => {
         learnedAt: Date.now(),
         reviewCount: 0,
         masteryLevel: 0,
+        nextReviewAt: Date.now(), // Immediately add to review list
       },
     };
     await AsyncStorage.setItem(KEYS.LEARNED_WORDS, JSON.stringify(updated));
@@ -67,6 +70,112 @@ export const updateWordReview = async (wordId: string, mastered: boolean): Promi
   } catch (error) {
     console.error('Error updating word review:', error);
     return false;
+  }
+};
+
+// Mistake Book Functions
+export const addToMistakeBook = async (word: Word, reason?: string): Promise<boolean> => {
+  try {
+    if (!word || !word.id) {
+      console.error('Invalid word data provided to addToMistakeBook');
+      return false;
+    }
+    const existing = await getMistakeWords();
+    const mistakeWord: MistakeWord = {
+      ...word,
+      mistakeCount: (existing[word.id]?.mistakeCount || 0) + 1,
+      lastMistakeAt: Date.now(),
+      mistakeReason: reason || existing[word.id]?.mistakeReason,
+      addedToReview: existing[word.id]?.addedToReview || false,
+    };
+    const updated = {
+      ...existing,
+      [word.id]: mistakeWord,
+    };
+    await AsyncStorage.setItem(KEYS.MISTAKE_WORDS, JSON.stringify(updated));
+    return true;
+  } catch (error) {
+    console.error('Error adding to mistake book:', error);
+    return false;
+  }
+};
+
+export const getMistakeWords = async (): Promise<Record<string, MistakeWord>> => {
+  try {
+    const data = await AsyncStorage.getItem(KEYS.MISTAKE_WORDS);
+    return data ? JSON.parse(data) : {};
+  } catch (error) {
+    console.error('Error getting mistake words:', error);
+    return {};
+  }
+};
+
+export const removeFromMistakeBook = async (wordId: string): Promise<boolean> => {
+  try {
+    const existing = await getMistakeWords();
+    delete existing[wordId];
+    await AsyncStorage.setItem(KEYS.MISTAKE_WORDS, JSON.stringify(existing));
+    return true;
+  } catch (error) {
+    console.error('Error removing from mistake book:', error);
+    return false;
+  }
+};
+
+export const markMistakeWordsAsReviewed = async (wordIds: string[]): Promise<boolean> => {
+  try {
+    const existing = await getMistakeWords();
+    for (const wordId of wordIds) {
+      if (existing[wordId]) {
+        existing[wordId].addedToReview = true;
+      }
+    }
+    await AsyncStorage.setItem(KEYS.MISTAKE_WORDS, JSON.stringify(existing));
+    return true;
+  } catch (error) {
+    console.error('Error marking mistake words as reviewed:', error);
+    return false;
+  }
+};
+
+// Check if we need to add mistake words to review (after 12:00 AM)
+export const checkAndAddMistakeWordsToReview = async (): Promise<Word[]> => {
+  try {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    
+    // Get last check date
+    const lastCheckDate = await AsyncStorage.getItem(KEYS.LAST_MISTAKE_CHECK_DATE);
+    
+    // If already checked today, skip
+    if (lastCheckDate === today) {
+      return [];
+    }
+    
+    // Get all mistake words that haven't been added to review yet
+    const mistakeWords = await getMistakeWords();
+    const wordsToAdd: Word[] = [];
+    const wordIdsToMark: string[] = [];
+    
+    for (const word of Object.values(mistakeWords)) {
+      if (!word.addedToReview) {
+        wordsToAdd.push(word);
+        wordIdsToMark.push(word.id);
+      }
+    }
+    
+    // Mark them as added to review
+    if (wordIdsToMark.length > 0) {
+      await markMistakeWordsAsReviewed(wordIdsToMark);
+    }
+    
+    // Update last check date
+    await AsyncStorage.setItem(KEYS.LAST_MISTAKE_CHECK_DATE, today);
+    
+    return wordsToAdd;
+  } catch (error) {
+    console.error('Error checking and adding mistake words to review:', error);
+    return [];
   }
 };
 

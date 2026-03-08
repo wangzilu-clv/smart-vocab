@@ -11,6 +11,7 @@ import {
   StatisticsScreen,
   WordDetailScreen,
   ProfileScreen,
+  MistakeBookScreen,
 } from '../screens';
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -67,6 +68,13 @@ export const AppNavigator: React.FC = () => {
         <Stack.Screen
           name="WordDetail"
           component={WordDetailScreen}
+          options={{
+            presentation: 'modal',
+          }}
+        />
+        <Stack.Screen
+          name="MistakeBook"
+          component={MistakeBookScreen}
           options={{
             presentation: 'modal',
           }}

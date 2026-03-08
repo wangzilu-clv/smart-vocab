@@ -26,6 +26,14 @@ export interface Word {
   reviewCount?: number;
   lastReviewAt?: number;
   masteryLevel?: number; // 0-5
+  nextReviewAt?: number;
+}
+
+export interface MistakeWord extends Word {
+  mistakeCount: number;
+  lastMistakeAt: number;
+  mistakeReason?: string;
+  addedToReview?: boolean;
 }
 
 export type AccentType = 'us' | 'uk';
@@ -64,6 +72,7 @@ export type RootStackParamList = {
   Main: undefined;
   Study: { mode: 'learn' | 'review'; wordIds?: string[] };
   WordDetail: { wordId: string };
+  MistakeBook: undefined;
   Settings: undefined;
 };
 

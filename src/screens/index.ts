@@ -4,3 +4,4 @@ export { DictionaryScreen } from './DictionaryScreen';
 export { StatisticsScreen } from './StatisticsScreen';
 export { WordDetailScreen } from './WordDetailScreen';
 export { ProfileScreen } from './ProfileScreen';
+export { MistakeBookScreen } from './MistakeBookScreen';

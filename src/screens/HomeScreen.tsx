@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +15,7 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList } from '../types';
 import { LearningProgress } from '../types';
-import { getLearningProgress } from '../utils/storage';
+import { getLearningProgress, checkAndAddMistakeWordsToReview } from '../utils/storage';
 import { recommendationEngine } from '../utils/recommendation';
 import { StatCard } from '../components/StatCard';
 
@@ -26,6 +27,7 @@ export const HomeScreen: React.FC = () => {
   const [reviewCount, setReviewCount] = useState(0);
   const [recommendCount, setRecommendCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [mistakeWordsAdded, setMistakeWordsAdded] = useState(0);
 
   const loadData = useCallback(async () => {
     const prog = await getLearningProgress();
@@ -41,6 +43,20 @@ export const HomeScreen: React.FC = () => {
   // Load data when component mounts
   useEffect(() => {
     loadData();
+    
+    // Check for mistake words to add to review (after 12:00 AM)
+    const checkMistakeWords = async () => {
+      const addedWords = await checkAndAddMistakeWordsToReview();
+      if (addedWords.length > 0) {
+        setMistakeWordsAdded(addedWords.length);
+        Alert.alert(
+          '错词已加入复习',
+          `${addedWords.length} 个错词已自动加入今天的复习列表`,
+          [{ text: '知道了' }]
+        );
+      }
+    };
+    checkMistakeWords();
   }, [loadData]);
 
   // Reload data when screen comes into focus
@@ -66,6 +82,15 @@ export const HomeScreen: React.FC = () => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
       >
+        {/* Mistake Words Notification */}
+        {mistakeWordsAdded > 0 && (
+          <View style={styles.mistakeBanner}>
+            <Ionicons name="alert-circle" size={20} color="#f44336" />
+            <Text style={styles.mistakeBannerText}>
+              今日已自动添加 {mistakeWordsAdded} 个错词到复习列表
+            </Text>
+          </View>
+        )}
         {/* Header */}
         <LinearGradient
           colors={['#667eea', '#764ba2']}
@@ -183,6 +208,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+  },
+  mistakeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    backgroundColor: '#ffebee',
+    marginHorizontal: 15,
+    marginTop: 10,
+    borderRadius: 10,
+    gap: 8,
+  },
+  mistakeBannerText: {
+    fontSize: 14,
+    color: '#c62828',
+    fontWeight: '500',
   },
   header: {
     padding: 30,

@@ -12,11 +12,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { RootStackParamList, UserPreferences } from '../types';
 import {
   getUserPreferences,
   saveUserPreferences,
   clearAllData,
+  getMistakeWords,
 } from '../utils/storage';
 
 type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Main'>;
@@ -24,14 +26,25 @@ type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Main
 export const ProfileScreen: React.FC = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
+  const [mistakeCount, setMistakeCount] = useState(0);
+  const [appVersion, setAppVersion] = useState('2.0.0');
 
   useEffect(() => {
     loadPreferences();
+    loadMistakeCount();
+    // Get version from app.json via expo-constants
+    const version = Constants.expoConfig?.version || Constants.manifest?.version || '2.0.0';
+    setAppVersion(version);
   }, []);
 
   const loadPreferences = async () => {
     const prefs = await getUserPreferences();
     setPreferences(prefs);
+  };
+
+  const loadMistakeCount = async () => {
+    const mistakeWords = await getMistakeWords();
+    setMistakeCount(Object.keys(mistakeWords).length);
   };
 
   const handleUpdatePreferences = async (updates: Partial<UserPreferences>) => {
@@ -55,10 +68,15 @@ export const ProfileScreen: React.FC = () => {
             await clearAllData();
             Alert.alert('已清除', '所有数据已重置');
             loadPreferences();
+            loadMistakeCount();
           },
         },
       ]
     );
+  };
+
+  const handleNavigateToMistakeBook = () => {
+    navigation.navigate('MistakeBook');
   };
 
   if (!preferences) {
@@ -78,6 +96,29 @@ export const ProfileScreen: React.FC = () => {
           </View>
           <Text style={styles.username}>学习者</Text>
           <Text style={styles.subtitle}>坚持学习，每天进步</Text>
+        </View>
+
+        {/* Mistake Book Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>学习工具</Text>
+
+          <TouchableOpacity
+            style={styles.toolItem}
+            onPress={handleNavigateToMistakeBook}
+          >
+            <View style={styles.toolInfo}>
+              <Ionicons name="bookmark" size={22} color="#f44336" />
+              <Text style={styles.toolLabel}>错词本</Text>
+            </View>
+            <View style={styles.toolRight}>
+              {mistakeCount > 0 && (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{mistakeCount}</Text>
+                </View>
+              )}
+              <Ionicons name="chevron-forward" size={20} color="#999" />
+            </View>
+          </TouchableOpacity>
         </View>
 
         {/* Settings Section */}
@@ -221,10 +262,10 @@ export const ProfileScreen: React.FC = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>关于</Text>
 
-          <TouchableOpacity style={styles.aboutItem}>
+          <View style={styles.aboutItem}>
             <Ionicons name="information-circle" size={22} color="#666" />
-            <Text style={styles.aboutText}>版本 1.0.0</Text>
-          </TouchableOpacity>
+            <Text style={styles.aboutText}>版本 {appVersion}</Text>
+          </View>
 
           <TouchableOpacity style={styles.aboutItem}>
             <Ionicons name="star" size={22} color="#666" />
@@ -288,6 +329,42 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     marginBottom: 15,
+  },
+  toolItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  toolInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  toolLabel: {
+    fontSize: 16,
+    color: '#333',
+  },
+  toolRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  badge: {
+    backgroundColor: '#f44336',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   settingItem: {
     flexDirection: 'row',
