@@ -5,17 +5,19 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList, Word } from '../types';
-import { WordCard } from '../components/WordCard';
-import { ActionButtons } from '../components/ActionButtons';
-import { ProgressBar } from '../components/ProgressBar';
+import { WordCard, ActionButtons, ProgressBar, QuizMode, SpellingMode } from '../components';
 import { saveLearnedWord, updateWordReview, recordStudySession } from '../utils/storage';
 import { recommendationEngine } from '../utils/recommendation';
 import { getAllWords } from '../data/vocabulary';
+
+type StudyMode = 'card' | 'quiz' | 'spelling';
 
 type StudyScreenRouteProp = RouteProp<RootStackParamList, 'Study'>;
 type StudyScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Study'>;
@@ -31,6 +33,9 @@ export const StudyScreen: React.FC = () => {
   const [studyStartTime] = useState(Date.now());
   const [learnedCount, setLearnedCount] = useState(0);
   const [reviewedCount, setReviewedCount] = useState(0);
+  const [studyMode, setStudyMode] = useState<StudyMode>('card');
+  const [quizAnswered, setQuizAnswered] = useState(false);
+  const [quizCorrect, setQuizCorrect] = useState(false);
 
   useEffect(() => {
     loadWords();
@@ -59,11 +64,17 @@ export const StudyScreen: React.FC = () => {
     }
   };
 
+  const resetWordState = () => {
+    setShowAnswer(false);
+    setQuizAnswered(false);
+    setQuizCorrect(false);
+  };
+
   const handleShowAnswer = () => {
     setShowAnswer(true);
   };
 
-  const handleResponse = async (level: 'know' | 'vague' | 'unknown') => {
+  const handleNextWord = async (known: boolean) => {
     const currentWord = words[currentIndex];
     
     if (mode === 'learn') {
@@ -72,21 +83,17 @@ export const StudyScreen: React.FC = () => {
       setLearnedCount(prev => prev + 1);
       
       // Initial review based on response
-      if (level === 'know') {
-        await updateWordReview(currentWord.id, true);
-      } else if (level === 'vague') {
-        await updateWordReview(currentWord.id, false);
-      }
+      await updateWordReview(currentWord.id, known);
     } else {
       // Update review status
-      await updateWordReview(currentWord.id, level === 'know');
+      await updateWordReview(currentWord.id, known);
       setReviewedCount(prev => prev + 1);
     }
 
     // Move to next word
     if (currentIndex < words.length - 1) {
       setCurrentIndex(prev => prev + 1);
-      setShowAnswer(false);
+      resetWordState();
     } else {
       // Study session complete
       const studyTimeMinutes = Math.ceil((Date.now() - studyStartTime) / 60000);
@@ -108,6 +115,21 @@ export const StudyScreen: React.FC = () => {
     }
   };
 
+  const handleQuizAnswer = (correct: boolean) => {
+    setQuizAnswered(true);
+    setQuizCorrect(correct);
+  };
+
+  const handleSpellingAnswer = (correct: boolean) => {
+    setQuizAnswered(true);
+    setQuizCorrect(correct);
+  };
+
+  const changeStudyMode = (newMode: StudyMode) => {
+    setStudyMode(newMode);
+    resetWordState();
+  };
+
   if (words.length === 0) {
     return (
       <SafeAreaView style={styles.container}>
@@ -127,6 +149,7 @@ export const StudyScreen: React.FC = () => {
   }
 
   const currentWord = words[currentIndex];
+  const nextReviewTime = recommendationEngine.getNextReviewTime(currentWord);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -146,29 +169,133 @@ export const StudyScreen: React.FC = () => {
         title={`进度 (${mode === 'learn' ? '新学习' : '复习'})`}
       />
 
-      <WordCard
-        word={currentWord}
-        showMeaning={showAnswer}
-        onFlip={showAnswer ? undefined : handleShowAnswer}
-        showDetail={showAnswer}
-      />
-
-      <ActionButtons
-        onKnow={() => handleResponse('know')}
-        onVague={() => handleResponse('vague')}
-        onUnknown={() => showAnswer ? handleResponse('unknown') : handleShowAnswer()}
-        showAnswer={showAnswer}
-      />
-
-      {showAnswer && currentWord.prefix && (
-        <View style={styles.tipContainer}>
-          <Text style={styles.tipText}>
-            💡 提示: "{currentWord.prefix}" 是前缀，表示否定
+      {/* Study Mode Selector */}
+      <View style={styles.modeSelector}>
+        <TouchableOpacity
+          style={[styles.modeButton, studyMode === 'card' && styles.modeButtonActive]}
+          onPress={() => changeStudyMode('card')}
+        >
+          <Ionicons name="card" size={18} color={studyMode === 'card' ? '#fff' : '#667eea'} />
+          <Text style={[styles.modeButtonText, studyMode === 'card' && styles.modeButtonTextActive]}>
+            卡片
           </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeButton, studyMode === 'quiz' && styles.modeButtonActive]}
+          onPress={() => changeStudyMode('quiz')}
+        >
+          <Ionicons name="help-circle" size={18} color={studyMode === 'quiz' ? '#fff' : '#667eea'} />
+          <Text style={[styles.modeButtonText, studyMode === 'quiz' && styles.modeButtonTextActive]}>
+            选择
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modeButton, studyMode === 'spelling' && styles.modeButtonActive]}
+          onPress={() => changeStudyMode('spelling')}
+        >
+          <Ionicons name="create" size={18} color={studyMode === 'spelling' ? '#fff' : '#667eea'} />
+          <Text style={[styles.modeButtonText, studyMode === 'spelling' && styles.modeButtonTextActive]}>
+            拼写
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Word Display */}
+        <View style={styles.wordSection}>
+          <Text style={styles.wordText}>{currentWord.word}</Text>
+          <Text style={styles.phoneticText}>{currentWord.phonetic}</Text>
+        </View>
+
+        {/* Study Mode Content */}
+        {studyMode === 'card' && (
+          <WordCard
+            word={currentWord}
+            showMeaning={showAnswer}
+            onFlip={showAnswer ? undefined : handleShowAnswer}
+            showDetail={showAnswer}
+          />
+        )}
+
+        {studyMode === 'quiz' && (
+          <QuizMode
+            word={currentWord}
+            onAnswer={handleQuizAnswer}
+            showResult={quizAnswered}
+          />
+        )}
+
+        {studyMode === 'spelling' && (
+          <SpellingMode
+            word={currentWord}
+            onAnswer={handleSpellingAnswer}
+            showResult={quizAnswered}
+          />
+        )}
+
+        {/* Next Review Info */}
+        {nextReviewTime && (
+          <View style={styles.reviewInfoContainer}>
+            <Ionicons name="time-outline" size={14} color="#666" />
+            <Text style={styles.reviewInfoText}>
+              下次复习: {formatNextReview(nextReviewTime)}
+            </Text>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Action Buttons */}
+      {studyMode === 'card' ? (
+        <ActionButtons
+          onKnow={() => handleNextWord(true)}
+          onVague={() => handleNextWord(false)}
+          onUnknown={() => showAnswer ? handleNextWord(false) : handleShowAnswer()}
+          showAnswer={showAnswer}
+        />
+      ) : (
+        <View style={styles.quizActions}>
+          {!quizAnswered ? (
+            <TouchableOpacity
+              style={styles.skipButton}
+              onPress={() => handleNextWord(false)}
+            >
+              <Text style={styles.skipButtonText}>跳过</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.resultButtons}>
+              <TouchableOpacity
+                style={[styles.resultButton, styles.wrongButton]}
+                onPress={() => handleNextWord(false)}
+              >
+                <Ionicons name="close" size={20} color="#fff" />
+                <Text style={styles.resultButtonText}>不认识</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.resultButton, styles.correctButton]}
+                onPress={() => handleNextWord(true)}
+              >
+                <Ionicons name="checkmark" size={20} color="#fff" />
+                <Text style={styles.resultButtonText}>认识</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       )}
     </SafeAreaView>
   );
+};
+
+const formatNextReview = (date: Date): string => {
+  const now = new Date();
+  const diff = date.getTime() - now.getTime();
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+
+  if (minutes < 1) return '马上';
+  if (minutes < 60) return `${minutes}分钟后`;
+  if (hours < 24) return `${hours}小时后`;
+  return `${days}天后`;
 };
 
 const styles = StyleSheet.create({
@@ -191,6 +318,68 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333',
   },
+  modeSelector: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 10,
+    gap: 10,
+  },
+  modeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#667eea',
+    gap: 5,
+  },
+  modeButtonActive: {
+    backgroundColor: '#667eea',
+  },
+  modeButtonText: {
+    color: '#667eea',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modeButtonTextActive: {
+    color: '#fff',
+  },
+  content: {
+    flex: 1,
+  },
+  wordSection: {
+    alignItems: 'center',
+    paddingVertical: 15,
+    backgroundColor: '#fff',
+    marginHorizontal: 20,
+    marginBottom: 10,
+    borderRadius: 15,
+  },
+  wordText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  phoneticText: {
+    fontSize: 16,
+    color: '#666',
+    marginTop: 5,
+  },
+  reviewInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  reviewInfoText: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 5,
+  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -212,15 +401,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  tipContainer: {
-    backgroundColor: '#e3f2fd',
-    marginHorizontal: 20,
-    padding: 12,
-    borderRadius: 10,
-    marginTop: 10,
+  quizActions: {
+    padding: 20,
+    paddingBottom: 30,
   },
-  tipText: {
-    color: '#1976d2',
-    fontSize: 13,
+  skipButton: {
+    backgroundColor: '#ccc',
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  skipButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  resultButtons: {
+    flexDirection: 'row',
+    gap: 15,
+  },
+  resultButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    borderRadius: 12,
+    gap: 8,
+  },
+  wrongButton: {
+    backgroundColor: '#f44336',
+  },
+  correctButton: {
+    backgroundColor: '#4caf50',
+  },
+  resultButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

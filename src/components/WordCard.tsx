@@ -1,7 +1,15 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Word } from '../types';
+import { Ionicons } from '@expo/vector-icons';
+import { Word, AccentType } from '../types';
+import { 
+  speakWord, 
+  speakExample, 
+  getAccent, 
+  getAccentFlag,
+  toggleAccent 
+} from '../utils/speech';
 
 interface WordCardProps {
   word: Word;
@@ -16,6 +24,39 @@ export const WordCard: React.FC<WordCardProps> = ({
   onFlip,
   showDetail = false,
 }) => {
+  const [accent, setAccent] = useState<AccentType>(getAccent());
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlayingExample, setIsPlayingExample] = useState(false);
+
+  const handleToggleAccent = useCallback(() => {
+    const newAccent = toggleAccent();
+    setAccent(newAccent);
+  }, []);
+
+  const handlePlayWord = useCallback(async () => {
+    if (isPlaying) return;
+    setIsPlaying(true);
+    try {
+      await speakWord(word.word, accent);
+    } finally {
+      setTimeout(() => setIsPlaying(false), 500);
+    }
+  }, [word.word, accent, isPlaying]);
+
+  const handlePlayExample = useCallback(async () => {
+    if (isPlayingExample) return;
+    setIsPlayingExample(true);
+    try {
+      await speakExample(word.example, accent);
+    } finally {
+      setTimeout(() => setIsPlayingExample(false), 500);
+    }
+  }, [word.example, accent, isPlayingExample]);
+
+  const currentPhonetic = accent === 'us' 
+    ? (word.phoneticUS || word.phonetic) 
+    : (word.phoneticUK || word.phonetic);
+
   return (
     <TouchableOpacity
       style={styles.container}
@@ -29,8 +70,40 @@ export const WordCard: React.FC<WordCardProps> = ({
         end={{ x: 1, y: 1 }}
       >
         <View style={styles.content}>
-          <Text style={styles.word}>{word.word}</Text>
-          <Text style={styles.phonetic}>{word.phonetic}</Text>
+          {/* Accent Toggle */}
+          <TouchableOpacity 
+            style={styles.accentToggle}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleToggleAccent();
+            }}
+          >
+            <Text style={styles.accentText}>
+              {getAccentFlag(accent)} {accent.toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Word with Play Button */}
+          <View style={styles.wordRow}>
+            <Text style={styles.word}>{word.word}</Text>
+            <TouchableOpacity
+              style={[styles.playButton, isPlaying && styles.playingButton]}
+              onPress={(e) => {
+                e.stopPropagation();
+                handlePlayWord();
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons 
+                name={isPlaying ? "volume-high" : "volume-medium"} 
+                size={28} 
+                color="#fff" 
+              />
+            </TouchableOpacity>
+          </View>
+          
+          {/* Phonetic */}
+          <Text style={styles.phonetic}>{currentPhonetic}</Text>
           
           {showMeaning && (
             <>
@@ -39,12 +112,42 @@ export const WordCard: React.FC<WordCardProps> = ({
               
               {showDetail && (
                 <>
+                  {/* Main Example with Play */}
                   <View style={styles.exampleContainer}>
+                    <View style={styles.exampleHeader}>
+                      <TouchableOpacity
+                        style={[styles.examplePlayButton, isPlayingExample && styles.playingButton]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handlePlayExample();
+                        }}
+                      >
+                        <Ionicons 
+                          name={isPlayingExample ? "volume-high" : "volume-low"} 
+                          size={18} 
+                          color="#667eea" 
+                        />
+                      </TouchableOpacity>
+                      <Text style={styles.exampleLabel}>例句</Text>
+                    </View>
                     <Text style={styles.example}>{word.example}</Text>
                     <Text style={styles.exampleTranslation}>
                       {word.exampleTranslation}
                     </Text>
                   </View>
+
+                  {/* Additional Examples */}
+                  {word.examples && word.examples.length > 0 && (
+                    <View style={styles.additionalExamples}>
+                      <Text style={styles.additionalLabel}>更多例句</Text>
+                      {word.examples.map((ex, idx) => (
+                        <View key={idx} style={styles.additionalExampleItem}>
+                          <Text style={styles.additionalExampleEn}>• {ex.sentence}</Text>
+                          <Text style={styles.additionalExampleCn}>{ex.translation}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
                   
                   <View style={styles.tagsContainer}>
                     <View style={[styles.tag, (styles.difficultyTag as any)[word.difficulty]]}>
@@ -89,14 +192,45 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 30,
-    minHeight: 250,
+    minHeight: 280,
     justifyContent: 'center',
+  },
+  accentToggle: {
+    position: 'absolute',
+    top: 15,
+    right: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+  },
+  accentText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  wordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
   },
   word: {
     fontSize: 36,
     fontWeight: 'bold',
     color: '#fff',
     textAlign: 'center',
+  },
+  playButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  playingButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
   phonetic: {
     fontSize: 18,
@@ -117,19 +251,63 @@ const styles = StyleSheet.create({
   },
   exampleContainer: {
     marginTop: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
     padding: 15,
     borderRadius: 10,
+  },
+  exampleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  exampleLabel: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 12,
+  },
+  examplePlayButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   example: {
     fontSize: 14,
     color: '#fff',
     fontStyle: 'italic',
+    lineHeight: 20,
   },
   exampleTranslation: {
     fontSize: 13,
     color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 5,
+    marginTop: 6,
+  },
+  additionalExamples: {
+    marginTop: 15,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 12,
+    borderRadius: 10,
+  },
+  additionalLabel: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  additionalExampleItem: {
+    marginBottom: 10,
+  },
+  additionalExampleEn: {
+    fontSize: 13,
+    color: '#fff',
+    lineHeight: 18,
+  },
+  additionalExampleCn: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 2,
+    paddingLeft: 10,
   },
   tagsContainer: {
     flexDirection: 'row',

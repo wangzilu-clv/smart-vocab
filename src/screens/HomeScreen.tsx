@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RootStackParamList } from '../types';
@@ -27,7 +27,7 @@ export const HomeScreen: React.FC = () => {
   const [recommendCount, setRecommendCount] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const prog = await getLearningProgress();
     setProgress(prog);
 
@@ -36,11 +36,19 @@ export const HomeScreen: React.FC = () => {
 
     const recommendations = await recommendationEngine.getRecommendations(10);
     setRecommendCount(recommendations.length);
-  };
+  }, []);
 
+  // Load data when component mounts
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
+
+  // Reload data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

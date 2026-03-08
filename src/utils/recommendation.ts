@@ -36,7 +36,16 @@ export class SmartRecommendationEngine {
     // Sort by score descending
     scoredWords.sort((a, b) => b.score - a.score);
     
-    return scoredWords.slice(0, count).map(sw => sw.word);
+    // Take top candidates (3x count) then shuffle to ensure variety
+    const topCandidates = scoredWords.slice(0, count * 3);
+    
+    // Shuffle using Fisher-Yates algorithm
+    for (let i = topCandidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [topCandidates[i], topCandidates[j]] = [topCandidates[j], topCandidates[i]];
+    }
+    
+    return topCandidates.slice(0, count).map(sw => sw.word);
   }
 
   private calculateScore(word: Word): { score: number; reasons: string[] } {
@@ -209,6 +218,7 @@ export class SmartRecommendationEngine {
 
   // 获取需要复习的单词 (基于艾宾浩斯遗忘曲线)
   async getReviewWords(): Promise<Word[]> {
+    await this.initialize();
     const learnedList = Object.values(this.learnedWords);
     const now = Date.now();
     const reviewWords: Word[] = [];
@@ -218,8 +228,9 @@ export class SmartRecommendationEngine {
       const lastReview = word.lastReviewAt || word.learnedAt || 0;
       const daysSinceLastReview = (now - lastReview) / (1000 * 60 * 60 * 24);
 
-      // Spaced repetition intervals (in days): 1, 2, 4, 7, 15, 30
-      const intervals = [1, 2, 4, 7, 15, 30];
+      // Spaced repetition intervals (in days): 
+      // 5分钟, 30分钟, 2小时, 6小时, 1天, 2天, 4天, 7天, 15天, 30天
+      const intervals = [0.0035, 0.021, 0.083, 0.25, 1, 2, 4, 7, 15, 30];
       const nextReviewInterval = intervals[Math.min(reviewCount, intervals.length - 1)];
 
       if (daysSinceLastReview >= nextReviewInterval) {
@@ -227,10 +238,41 @@ export class SmartRecommendationEngine {
       }
     }
 
-    // Sort by priority (lower mastery = higher priority)
-    reviewWords.sort((a, b) => (a.masteryLevel || 0) - (b.masteryLevel || 0));
+    // Sort by priority (lower mastery = higher priority, then by last review time)
+    reviewWords.sort((a, b) => {
+      const masteryDiff = (a.masteryLevel || 0) - (b.masteryLevel || 0);
+      if (masteryDiff !== 0) return masteryDiff;
+      // If mastery is same, prioritize words that haven't been reviewed longer
+      const aLastReview = a.lastReviewAt || a.learnedAt || 0;
+      const bLastReview = b.lastReviewAt || b.learnedAt || 0;
+      return aLastReview - bLastReview;
+    });
     
     return reviewWords;
+  }
+
+  // 获取最近学过的单词（用于立即复习）
+  async getRecentWords(hours: number = 24): Promise<Word[]> {
+    await this.initialize();
+    const learnedList = Object.values(this.learnedWords);
+    const now = Date.now();
+    const cutoffTime = now - (hours * 60 * 60 * 1000);
+    
+    return learnedList
+      .filter(word => (word.learnedAt || 0) > cutoffTime)
+      .sort((a, b) => (b.learnedAt || 0) - (a.learnedAt || 0));
+  }
+
+  // 获取单词的下次复习时间
+  getNextReviewTime(word: Word): Date | null {
+    if (!word.learnedAt) return null;
+    
+    const reviewCount = word.reviewCount || 0;
+    const lastReview = word.lastReviewAt || word.learnedAt;
+    const intervals = [0.0035, 0.021, 0.083, 0.25, 1, 2, 4, 7, 15, 30]; // in days
+    const nextInterval = intervals[Math.min(reviewCount, intervals.length - 1)];
+    
+    return new Date(lastReview + nextInterval * 24 * 60 * 60 * 1000);
   }
 
   // 根据特定词根获取相关单词

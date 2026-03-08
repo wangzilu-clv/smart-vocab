@@ -1,22 +1,39 @@
+export interface Example {
+  sentence: string;
+  translation: string;
+}
+
 export interface Word {
   id: string;
   word: string;
   phonetic: string;
+  phoneticUS?: string;
+  phoneticUK?: string;
   meaning: string;
+  meaningDetail?: string;
   example: string;
   exampleTranslation: string;
+  examples?: Example[];
   difficulty: 'easy' | 'medium' | 'hard';
   tags: string[];
   theme: string;
   prefix?: string;
   suffix?: string;
   root?: string;
-  category: 'business' | 'travel' | 'academic' | 'daily' | 'technology';
+  category: 'business' | 'travel' | 'academic' | 'daily' | 'technology' | 'cet4' | 'cet6';
   learned?: boolean;
   learnedAt?: number;
   reviewCount?: number;
   lastReviewAt?: number;
   masteryLevel?: number; // 0-5
+}
+
+export type AccentType = 'us' | 'uk';
+
+export interface SpeechSettings {
+  accent: AccentType;
+  rate: number;
+  pitch: number;
 }
 
 export interface LearningProgress {
