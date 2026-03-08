@@ -13,12 +13,12 @@ import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList, Word } from '../types';
 import { WordCard, ActionButtons, ProgressBar, QuizMode, SpellingMode } from '../components';
-import { saveLearnedWord, updateWordReview, recordStudySession, addToMistakeBook } from '../utils/storage';
+import { saveLearnedWord, updateWordReview, recordStudySession, addToMistakeBook, markWordAsMastered } from '../utils/storage';
 import { recommendationEngine } from '../utils/recommendation';
 import { getAllWords } from '../data/vocabulary';
 
 type StudyMode = 'card' | 'quiz' | 'spelling';
-type ReviewRound = 1 | 2;
+type ReviewPhase = 'first' | 'second'; // 复习阶段：第一轮或第二轮
 
 type StudyScreenRouteProp = RouteProp<RootStackParamList, 'Study'>;
 type StudyScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Study'>;
@@ -37,7 +37,8 @@ export const StudyScreen: React.FC = () => {
   const [studyMode, setStudyMode] = useState<StudyMode>('card');
   const [quizAnswered, setQuizAnswered] = useState(false);
   const [quizCorrect, setQuizCorrect] = useState(false);
-  const [reviewRound, setReviewRound] = useState<ReviewRound>(1); // For review mode: 1 = quiz, 2 = spelling
+  const [reviewPhase, setReviewPhase] = useState<ReviewPhase>('first'); // 复习阶段
+  const [isCompleted, setIsCompleted] = useState(false);
 
   useEffect(() => {
     loadWords();
@@ -45,7 +46,7 @@ export const StudyScreen: React.FC = () => {
 
   const loadWords = async () => {
     if (mode === 'review') {
-      // If specific wordIds provided, use them; otherwise get review words from engine
+      // 复习模式
       if (wordIds && wordIds.length > 0) {
         const allWords = getAllWords();
         const selected = allWords.filter(w => wordIds.includes(w.id));
@@ -55,14 +56,13 @@ export const StudyScreen: React.FC = () => {
         setWords(reviewWords.slice(0, 20));
       }
     } else {
-      // Learn mode - use smart recommendations
+      // 学习模式
       if (wordIds && wordIds.length > 0) {
         const allWords = getAllWords();
         const selected = allWords.filter(w => wordIds.includes(w.id));
         if (selected.length > 0) {
           setWords(selected);
         } else {
-          // Fallback to recommendations if no matching words found
           const recommendations = await recommendationEngine.getRecommendations(20);
           setWords(recommendations);
         }
@@ -83,66 +83,92 @@ export const StudyScreen: React.FC = () => {
     setShowAnswer(true);
   };
 
+  // 处理"已掌握"按钮
+  const handleMasterWord = async () => {
+    const currentWord = words[currentIndex];
+    
+    Alert.alert(
+      '标记为已掌握',
+      `确定将 "${currentWord.word}" 标记为已掌握吗？标记后将不再参与复习。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '确定',
+          style: 'default',
+          onPress: async () => {
+            await markWordAsMastered(currentWord.id);
+            
+            if (mode === 'learn') {
+              setLearnedCount(prev => prev + 1);
+            } else {
+              setReviewedCount(prev => prev + 1);
+            }
+            
+            // 移动到下一个
+            moveToNext();
+          },
+        },
+      ]
+    );
+  };
+
+  // 移动到下一个单词或完成
+  const moveToNext = () => {
+    if (currentIndex < words.length - 1) {
+      setCurrentIndex(prev => prev + 1);
+      resetWordState();
+    } else {
+      // 当前阶段完成
+      if (mode === 'review' && reviewPhase === 'first') {
+        // 复习模式第一轮完成，进入第二轮
+        setReviewPhase('second');
+        setCurrentIndex(0);
+        resetWordState();
+      } else {
+        // 全部完成
+        setIsCompleted(true);
+        finishStudySession();
+      }
+    }
+  };
+
   const handleNextWord = async (known: boolean, isMistake: boolean = false) => {
     const currentWord = words[currentIndex];
     
-    // Add to mistake book if not known or explicitly marked as mistake
+    // 添加到错词本
     if (isMistake || !known) {
       const reason = mode === 'learn' 
         ? (showAnswer ? '不认识' : '模糊')
-        : (reviewRound === 1 ? '选择题答错' : '拼写错误');
+        : (reviewPhase === 'first' ? '选择题答错' : '拼写错误');
       await addToMistakeBook(currentWord, reason);
     }
     
     if (mode === 'learn') {
-      // Save as learned word (already adds to review list immediately via nextReviewAt)
+      // 学习模式
       await saveLearnedWord(currentWord);
       setLearnedCount(prev => prev + 1);
-      
-      // Initial review based on response
       await updateWordReview(currentWord.id, known);
-      
-      // Move to next word
-      if (currentIndex < words.length - 1) {
-        setCurrentIndex(prev => prev + 1);
-        resetWordState();
-      } else {
-        finishStudySession();
-      }
+      moveToNext();
     } else {
-      // Review mode with two rounds
-      if (reviewRound === 1) {
-        // First round (quiz) completed, move to second round (spelling)
-        setReviewRound(2);
-        setStudyMode('spelling');
-        resetWordState();
-      } else {
-        // Second round completed, move to next word
-        await updateWordReview(currentWord.id, known);
-        setReviewedCount(prev => prev + 1);
-        
-        if (currentIndex < words.length - 1) {
-          setCurrentIndex(prev => prev + 1);
-          setReviewRound(1);
-          setStudyMode('card'); // Reset to card view for next word
-          resetWordState();
-        } else {
-          finishStudySession();
-        }
-      }
+      // 复习模式
+      await updateWordReview(currentWord.id, known);
+      setReviewedCount(prev => prev + 1);
+      moveToNext();
     }
   };
 
   const finishStudySession = async () => {
     const studyTimeMinutes = Math.ceil((Date.now() - studyStartTime) / 60000);
     await recordStudySession(
-      mode === 'learn' ? learnedCount + 1 : 0,
+      mode === 'learn' ? learnedCount : 0,
       studyTimeMinutes
     );
     
+    const totalCount = mode === 'learn' ? learnedCount : reviewedCount;
+    
     Alert.alert(
       '学习完成！',
-      `你${mode === 'learn' ? '学习了' : '复习了'} ${mode === 'learn' ? learnedCount + 1 : reviewedCount + 1} 个单词！`,
+      `你${mode === 'learn' ? '学习了' : '复习了'} ${totalCount} 个单词！`,
       [
         {
           text: '返回首页',
@@ -156,7 +182,6 @@ export const StudyScreen: React.FC = () => {
     setQuizAnswered(true);
     setQuizCorrect(correct);
     
-    // Add to mistake book if wrong
     if (!correct) {
       addToMistakeBook(words[currentIndex], '选择题答错');
     }
@@ -166,25 +191,20 @@ export const StudyScreen: React.FC = () => {
     setQuizAnswered(true);
     setQuizCorrect(correct);
     
-    // Add to mistake book if wrong
     if (!correct) {
       addToMistakeBook(words[currentIndex], '拼写错误');
     }
   };
 
   const handleLearnAction = (action: 'know' | 'vague' | 'unknown') => {
-    const currentWord = words[currentIndex];
-    
     if (action === 'know') {
       handleNextWord(true, false);
     } else if (action === 'vague') {
-      // Vague = not fully known, add to mistake book
       handleNextWord(false, true);
     } else if (action === 'unknown') {
       if (!showAnswer) {
         handleShowAnswer();
       } else {
-        // Already showing answer, mark as unknown
         handleNextWord(false, true);
       }
     }
@@ -216,11 +236,23 @@ export const StudyScreen: React.FC = () => {
   const currentWord = words[currentIndex];
   const nextReviewTime = recommendationEngine.getNextReviewTime(currentWord);
 
-  // Calculate progress
-  const totalSteps = mode === 'learn' ? words.length : words.length * 2;
-  const currentStep = mode === 'learn' 
-    ? currentIndex + 1 
-    : currentIndex * 2 + reviewRound;
+  // 计算进度
+  let totalSteps: number;
+  let currentStep: number;
+  
+  if (mode === 'learn') {
+    totalSteps = words.length;
+    currentStep = currentIndex + 1;
+  } else {
+    // 复习模式：两轮
+    totalSteps = words.length * 2;
+    currentStep = reviewPhase === 'first' 
+      ? currentIndex + 1 
+      : words.length + currentIndex + 1;
+  }
+
+  // 判断是否显示单词（第二轮拼写时不显示）
+  const shouldShowWord = !(mode === 'review' && reviewPhase === 'second');
 
   return (
     <SafeAreaView style={styles.container}>
@@ -229,7 +261,9 @@ export const StudyScreen: React.FC = () => {
           <Text style={styles.backText}>← 返回</Text>
         </TouchableOpacity>
         <Text style={styles.modeText}>
-          {mode === 'learn' ? '学习新词' : `复习单词 (第${reviewRound}/2轮)`}
+          {mode === 'learn' 
+            ? '学习新词' 
+            : `复习单词 (${reviewPhase === 'first' ? '第一轮' : '第二轮'})`}
         </Text>
         <View style={{ width: 50 }} />
       </View>
@@ -240,8 +274,8 @@ export const StudyScreen: React.FC = () => {
         title={`进度 (${mode === 'learn' ? '新学习' : '复习'})`}
       />
 
-      {/* Study Mode Selector - Only show for review mode */}
-      {mode === 'review' && reviewRound === 1 && (
+      {/* 学习模式选择器 - 只在复习模式第一轮显示 */}
+      {mode === 'review' && reviewPhase === 'first' && (
         <View style={styles.modeSelector}>
           <TouchableOpacity
             style={[styles.modeButton, studyMode === 'card' && styles.modeButtonActive]}
@@ -265,14 +299,16 @@ export const StudyScreen: React.FC = () => {
       )}
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Word Display */}
-        <View style={styles.wordSection}>
-          <Text style={styles.wordText}>{currentWord.word}</Text>
-          <Text style={styles.phoneticText}>{currentWord.phonetic}</Text>
-        </View>
+        {/* 单词显示区域 - 第二轮拼写时不显示单词 */}
+        {shouldShowWord && (
+          <View style={styles.wordSection}>
+            <Text style={styles.wordText}>{currentWord.word}</Text>
+            <Text style={styles.phoneticText}>{currentWord.phonetic}</Text>
+          </View>
+        )}
 
-        {/* Study Mode Content */}
-        {mode === 'learn' || (mode === 'review' && reviewRound === 1 && studyMode === 'card') ? (
+        {/* 学习内容区域 */}
+        {mode === 'learn' || (mode === 'review' && reviewPhase === 'first' && studyMode === 'card') ? (
           <WordCard
             word={currentWord}
             showMeaning={showAnswer}
@@ -281,7 +317,7 @@ export const StudyScreen: React.FC = () => {
           />
         ) : null}
 
-        {mode === 'review' && reviewRound === 1 && studyMode === 'quiz' && (
+        {mode === 'review' && reviewPhase === 'first' && studyMode === 'quiz' && (
           <QuizMode
             word={currentWord}
             onAnswer={handleQuizAnswer}
@@ -289,16 +325,18 @@ export const StudyScreen: React.FC = () => {
           />
         )}
 
-        {mode === 'review' && reviewRound === 2 && (
+        {mode === 'review' && reviewPhase === 'second' && (
           <SpellingMode
             word={currentWord}
             onAnswer={handleSpellingAnswer}
             showResult={quizAnswered}
+            hideHints={true}  // 第二轮隐藏提示
+            hideWord={true}   // 第二轮隐藏单词
           />
         )}
 
-        {/* Next Review Info */}
-        {nextReviewTime && mode === 'review' && reviewRound === 1 && (
+        {/* 下次复习时间提示 */}
+        {nextReviewTime && mode === 'review' && reviewPhase === 'first' && (
           <View style={styles.reviewInfoContainer}>
             <Ionicons name="time-outline" size={14} color="#666" />
             <Text style={styles.reviewInfoText}>
@@ -306,11 +344,20 @@ export const StudyScreen: React.FC = () => {
             </Text>
           </View>
         )}
+
+        {/* 已掌握按钮 */}
+        <TouchableOpacity
+          style={styles.masterButton}
+          onPress={handleMasterWord}
+        >
+          <Ionicons name="checkmark-circle" size={18} color="#4caf50" />
+          <Text style={styles.masterButtonText}>已掌握</Text>
+        </TouchableOpacity>
       </ScrollView>
 
-      {/* Action Buttons */}
+      {/* 操作按钮 */}
       {mode === 'learn' ? (
-        // Learn mode: Only card mode with Know/Vague/Unknown buttons
+        // 学习模式
         <ActionButtons
           onKnow={() => handleLearnAction('know')}
           onVague={() => handleLearnAction('vague')}
@@ -318,18 +365,18 @@ export const StudyScreen: React.FC = () => {
           showAnswer={showAnswer}
         />
       ) : (
-        // Review mode
+        // 复习模式
         <View style={styles.quizActions}>
-          {reviewRound === 1 && studyMode === 'card' ? (
-            // First round - card mode
+          {reviewPhase === 'first' && studyMode === 'card' ? (
+            // 第一轮 - 卡片模式
             <ActionButtons
               onKnow={() => handleNextWord(true, false)}
               onVague={() => handleNextWord(false, true)}
               onUnknown={() => showAnswer ? handleNextWord(false, true) : handleShowAnswer()}
               showAnswer={showAnswer}
             />
-          ) : reviewRound === 1 && studyMode === 'quiz' ? (
-            // First round - quiz mode
+          ) : reviewPhase === 'first' && studyMode === 'quiz' ? (
+            // 第一轮 - 选择模式
             !quizAnswered ? (
               <TouchableOpacity
                 style={styles.skipButton}
@@ -356,7 +403,7 @@ export const StudyScreen: React.FC = () => {
               </View>
             )
           ) : (
-            // Second round - spelling mode
+            // 第二轮 - 拼写模式
             !quizAnswered ? (
               <TouchableOpacity
                 style={styles.skipButton}
@@ -477,12 +524,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 10,
-    marginBottom: 20,
   },
   reviewInfoText: {
     fontSize: 12,
     color: '#666',
     marginLeft: 5,
+  },
+  masterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    marginTop: 20,
+    marginBottom: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#e8f5e9',
+    borderRadius: 20,
+    gap: 5,
+  },
+  masterButtonText: {
+    color: '#4caf50',
+    fontSize: 14,
+    fontWeight: '600',
   },
   emptyContainer: {
     flex: 1,

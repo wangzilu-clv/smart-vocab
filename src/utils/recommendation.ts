@@ -224,6 +224,9 @@ export class SmartRecommendationEngine {
     const reviewWords: Word[] = [];
 
     for (const word of learnedList) {
+      // 跳过已掌握的单词
+      if (word.mastered) continue;
+      
       const reviewCount = word.reviewCount || 0;
       const lastReview = word.lastReviewAt || word.learnedAt || 0;
       const daysSinceLastReview = (now - lastReview) / (1000 * 60 * 60 * 24);

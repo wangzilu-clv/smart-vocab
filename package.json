@@ -1,6 +1,6 @@
 {
   "name": "smart-vocab",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "main": "expo/AppEntry.js",
   "scripts": {
     "start": "expo start",

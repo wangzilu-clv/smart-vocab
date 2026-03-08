@@ -12,9 +12,17 @@ interface SpellingModeProps {
   word: Word;
   onAnswer: (correct: boolean) => void;
   showResult: boolean;
+  hideHints?: boolean; // 第二轮复习时隐藏提示
+  hideWord?: boolean;  // 第二轮复习时隐藏单词
 }
 
-export const SpellingMode: React.FC<SpellingModeProps> = ({ word, onAnswer, showResult }) => {
+export const SpellingMode: React.FC<SpellingModeProps> = ({ 
+  word, 
+  onAnswer, 
+  showResult,
+  hideHints = false,
+  hideWord = false,
+}) => {
   const [input, setInput] = useState('');
   const inputRef = useRef<TextInput>(null);
 
@@ -45,10 +53,13 @@ export const SpellingMode: React.FC<SpellingModeProps> = ({ word, onAnswer, show
       <Text style={styles.question}>根据释义拼写单词：</Text>
       <Text style={styles.meaning}>{word.meaning}</Text>
       
-      <View style={styles.hintContainer}>
-        <Text style={styles.hintLabel}>提示：</Text>
-        <Text style={styles.hint}>{getHint()}</Text>
-      </View>
+      {/* 只在非第二轮复习时显示提示 */}
+      {!hideHints && (
+        <View style={styles.hintContainer}>
+          <Text style={styles.hintLabel}>提示：</Text>
+          <Text style={styles.hint}>{getHint()}</Text>
+        </View>
+      )}
 
       <TextInput
         ref={inputRef}

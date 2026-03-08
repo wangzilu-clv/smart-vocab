@@ -27,6 +27,8 @@ export interface Word {
   lastReviewAt?: number;
   masteryLevel?: number; // 0-5
   nextReviewAt?: number;
+  mastered?: boolean;
+  masteredAt?: number;
 }
 
 export interface MistakeWord extends Word {

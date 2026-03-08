@@ -9,6 +9,7 @@ const KEYS = {
   BOOKMARKS: '@smartvocab_bookmarks',
   MISTAKE_WORDS: '@smartvocab_mistake_words',
   LAST_MISTAKE_CHECK_DATE: '@smartvocab_last_mistake_check_date',
+  MASTERED_WORDS: '@smartvocab_mastered_words',
 };
 
 // Learned Words
@@ -28,6 +29,7 @@ export const saveLearnedWord = async (word: Word): Promise<boolean> => {
         reviewCount: 0,
         masteryLevel: 0,
         nextReviewAt: Date.now(), // Immediately add to review list
+        mastered: false,
       },
     };
     await AsyncStorage.setItem(KEYS.LEARNED_WORDS, JSON.stringify(updated));
@@ -363,5 +365,86 @@ export const clearAllData = async (): Promise<void> => {
     await AsyncStorage.multiRemove(Object.values(KEYS));
   } catch (error) {
     console.error('Error clearing data:', error);
+  }
+};
+
+// Mastered Words - 单词掌握机制
+export const markWordAsMastered = async (wordId: string): Promise<boolean> => {
+  try {
+    if (!wordId) {
+      console.error('Invalid wordId provided to markWordAsMastered');
+      return false;
+    }
+    
+    // 更新 learnedWords 中的 mastered 字段
+    const learnedWords = await getLearnedWords();
+    if (learnedWords[wordId]) {
+      learnedWords[wordId] = {
+        ...learnedWords[wordId],
+        mastered: true,
+        masteredAt: Date.now(),
+      };
+      await AsyncStorage.setItem(KEYS.LEARNED_WORDS, JSON.stringify(learnedWords));
+    }
+    
+    // 添加到已掌握列表
+    const masteredWords = await getMasteredWords();
+    if (!masteredWords.includes(wordId)) {
+      masteredWords.push(wordId);
+      await AsyncStorage.setItem(KEYS.MASTERED_WORDS, JSON.stringify(masteredWords));
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error marking word as mastered:', error);
+    return false;
+  }
+};
+
+export const getMasteredWords = async (): Promise<string[]> => {
+  try {
+    const data = await AsyncStorage.getItem(KEYS.MASTERED_WORDS);
+    return data ? JSON.parse(data) : [];
+  } catch (error) {
+    console.error('Error getting mastered words:', error);
+    return [];
+  }
+};
+
+export const isWordMastered = async (wordId: string): Promise<boolean> => {
+  try {
+    const masteredWords = await getMasteredWords();
+    return masteredWords.includes(wordId);
+  } catch (error) {
+    console.error('Error checking if word is mastered:', error);
+    return false;
+  }
+};
+
+export const unmasterWord = async (wordId: string): Promise<boolean> => {
+  try {
+    // 从已掌握列表中移除
+    const masteredWords = await getMasteredWords();
+    const index = masteredWords.indexOf(wordId);
+    if (index > -1) {
+      masteredWords.splice(index, 1);
+      await AsyncStorage.setItem(KEYS.MASTERED_WORDS, JSON.stringify(masteredWords));
+    }
+    
+    // 更新 learnedWords 中的 mastered 字段
+    const learnedWords = await getLearnedWords();
+    if (learnedWords[wordId]) {
+      learnedWords[wordId] = {
+        ...learnedWords[wordId],
+        mastered: false,
+        masteredAt: undefined,
+      };
+      await AsyncStorage.setItem(KEYS.LEARNED_WORDS, JSON.stringify(learnedWords));
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Error unmastering word:', error);
+    return false;
   }
 };
