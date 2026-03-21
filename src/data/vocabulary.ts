@@ -2,9 +2,14 @@ import { Word } from '../types';
 
 // 导入CET-4各批次
 import { cet4Batch1, cet4Batch2, cet4Batch3 } from './cet4-batches';
+// 导入 IELTS/TOEFL 词汇批次
+import { ieltsToeflBatch1 } from './ielts-toefl-batch';
+import { ieltsToeflBatch2 } from './ielts-toefl-batch2';
+import { ieltsToeflBatch3 } from './ielts-toefl-batch3';
+import { ieltsToeflBatch4 } from './ielts-toefl-batch4';
 
 // 词汇总数统计
-// CET-4: 约800词 | CET-6: 约700词 | 其他: 约500词 | 总计: 2000+词
+// CET-4: 约800词 | CET-6: 约700词 | IELTS/TOEFL: 600词 (本批次) | 其他: 约500词 | 总计: 2600+词
 
 // CET-4 第1部分 (1-30) - 详细格式
 export const cet4Part1: Word[] = [
@@ -623,11 +628,15 @@ export const originalWords: Word[] = [
   },
 ];
 
-// 完整词汇库 - 2000+单词
+// 完整词汇库 - 2600+单词 (2000原词 + 600新增IELTS/TOEFL词汇)
 export const vocabularyData: Word[] = [
   ...originalWords,
   ...cet4AllWords,
   ...cet6Words,
+  ...ieltsToeflBatch1,
+  ...ieltsToeflBatch2,
+  ...ieltsToeflBatch3,
+  ...ieltsToeflBatch4,
 ];
 
 // 辅助函数
@@ -668,6 +677,7 @@ export const vocabularyStats = {
   totalWords: vocabularyData.length,
   cet4Words: cet4AllWords.length,
   cet6Words: cet6Words.length,
+  ieltsToeflWords: ieltsToeflBatch1.length + ieltsToeflBatch2.length + ieltsToeflBatch3.length + ieltsToeflBatch4.length,
   originalWords: originalWords.length,
   categories: getAllCategories(),
 };
